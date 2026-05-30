@@ -1,6 +1,5 @@
 {
   "rootDirectory": "frontend",
-  "buildCommand": "bun run build",
-  "outputDirectory": ".output/public",
-  "installCommand": "bun install"
+  "installCommand": "bun install",
+  "buildCommand": "bun run build"
 }
