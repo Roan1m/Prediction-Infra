@@ -4,7 +4,7 @@ import { studionet, testnetBradbury } from "genlayer-js/chains";
 import { TransactionStatus } from "genlayer-js/types";
 
 export const CONTRACT_ADDRESS =
-  "0xdB0110dBbFCaD3a8cbB567A28816B4d6128e3f67" as `0x${string}`;
+  "0xbAA2dfb881476cC9C23975D7A90F2a81f7Dd5dA1" as `0x${string}`;
 
 // Switch to testnetBradbury if your contract is deployed there.
 export const CHAIN = studionet;
