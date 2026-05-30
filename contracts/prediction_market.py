@@ -1,8 +1,15 @@
+# v0.1.0
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
+
+from genlayer import *
+
+import json
+import typing
+from dataclasses import dataclass
+
+
+# PredictionMarket - an AI-resolved prediction market Intelligent Contract.
 #
-# PredictionMarket - an Intelligent Contract for GenLayer.
-#
-# AI-resolved prediction market:
 #   - Anyone creates a market: question, public resolution URL, comma-separated
 #     outcomes (e.g. "Brazil, Jamaica, Draw").
 #   - Players predict an outcome (one prediction per player per market).
@@ -12,23 +19,11 @@
 #     field has to match, the analysis text may differ).
 #   - Correct predictors earn 1 point.
 #
-# Storage design uses ONLY documented GenLayer patterns to guarantee the schema
-# loads:
-#   - flat `DynArray[Market]` and flat `DynArray[Prediction]` (DynArray of an
-#     @allow_storage dataclass with primitive/str/Address/bool/u256 fields),
-#   - `TreeMap[Address, u256]` for points.
-# No nested collections and no u256-keyed maps (those have no documented
-# precedent). A market id is simply its index in `markets`. Per-market data is
-# kept flat: outcomes live in the Market as a comma-separated string, and each
-# Prediction stores the market_id it belongs to.
-#
-# Public method signatures use plain `int` / `str` (sized ints are storage-only).
-
-from genlayer import *
-
-import json
-import typing
-from dataclasses import dataclass
+# Storage uses only documented patterns: flat DynArray[Market] +
+# DynArray[Prediction] + TreeMap[Address, u256]. A market id is its index in
+# `markets`; outcomes are stored as a comma-separated string and each Prediction
+# carries its market_id. Public method signatures use plain int / str (sized
+# ints are storage-only).
 
 
 @allow_storage
