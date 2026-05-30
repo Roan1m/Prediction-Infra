@@ -247,3 +247,32 @@ Respond ONLY with JSON in this exact shape, nothing else:
     @gl.public.view
     def get_points(self, player: str) -> int:
         return self.points.get(Address(player), u256(0))
+
+    @gl.public.view
+    def get_player_points(self, player: str) -> int:
+        """Alias for get_points (used by the frontend)."""
+        return self.points.get(Address(player), u256(0))
+
+    @gl.public.view
+    def get_markets(self) -> typing.Any:
+        """Return all markets (used by the frontend to list them all at once)."""
+        result = []
+        for i in range(len(self.markets)):
+            m = self.markets[i]
+            prediction_count = 0
+            for p in self.predictions:
+                if p.market_id == i:
+                    prediction_count += 1
+            result.append({
+                "id": i,
+                "creator": m.creator.as_hex,
+                "question": m.question,
+                "resolution_url": m.resolution_url,
+                "deadline": m.deadline,
+                "resolved": m.resolved,
+                "winning_outcome": m.winning_outcome,
+                "analysis": m.analysis,
+                "outcomes": self._split(m.outcomes_csv),
+                "prediction_count": prediction_count,
+            })
+        return result
