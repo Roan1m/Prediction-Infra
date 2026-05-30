@@ -1,0 +1,22 @@
+networks:
+  default: localnet
+
+  localnet:
+    url: "http://localhost:4000/api"
+
+  studionet:
+    url: "https://studio.genlayer.com/api"
+
+  testnet_asimov:
+    url: "https://rpc-asimov.genlayer.com"
+    accounts:
+      - "${ACCOUNT_PRIVATE_KEY_1}"
+
+  testnet_bradbury:
+    url: "https://rpc-bradbury.genlayer.com"
+    accounts:
+      - "${ACCOUNT_PRIVATE_KEY_1}"
+
+paths:
+  contracts: "contracts"
+  artifacts: "artifacts"

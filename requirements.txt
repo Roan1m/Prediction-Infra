@@ -1,0 +1,8 @@
+# GenLayer testing + tooling
+# Direct mode (in-memory) tests work with just genlayer-test.
+# Add the [sim] extra if you want to run GLSim (lightweight local node).
+genlayer-test
+# genlayer-test[sim]   # uncomment to enable `glsim`
+
+# Static analysis / linter for Intelligent Contracts (provides `genvm-lint`)
+genvm-linter
