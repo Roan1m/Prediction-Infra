@@ -6,6 +6,8 @@ Run with:   pytest tests/ -v
 Direct mode runs the contract in-memory (no Studio / Docker needed). Web and
 LLM calls are mocked with the `direct_vm.mock_web` / `direct_vm.mock_llm`
 cheatcodes.
+
+`outcomes` is passed to `create_market` as a comma-separated string.
 """
 
 import json
@@ -20,7 +22,7 @@ def test_create_and_read_market(direct_vm, direct_deploy, direct_alice):
     market_id = contract.create_market(
         "Who wins Brazil vs Jamaica?",
         "https://example.com/match",
-        ["Brazil", "Jamaica", "Draw"],
+        "Brazil, Jamaica, Draw",
         "2025-07-01T00:00:00+00:00",
     )
 
@@ -37,14 +39,14 @@ def test_create_market_requires_two_outcomes(direct_vm, direct_deploy, direct_al
     contract = direct_deploy(CONTRACT)
     direct_vm.sender = direct_alice
     with direct_vm.expect_revert("at least two outcomes"):
-        contract.create_market("Q?", "https://example.com", ["OnlyOne"], "")
+        contract.create_market("Q?", "https://example.com", "OnlyOne", "")
 
 
 def test_predict_validates_outcome(direct_vm, direct_deploy, direct_alice):
     contract = direct_deploy(CONTRACT)
     direct_vm.sender = direct_alice
     market_id = contract.create_market(
-        "Q?", "https://example.com/m", ["Brazil", "Jamaica", "Draw"], ""
+        "Q?", "https://example.com/m", "Brazil, Jamaica, Draw", ""
     )
     with direct_vm.expect_revert("invalid outcome"):
         contract.predict(market_id, "Spain")
@@ -54,7 +56,7 @@ def test_no_double_prediction(direct_vm, direct_deploy, direct_alice):
     contract = direct_deploy(CONTRACT)
     direct_vm.sender = direct_alice
     market_id = contract.create_market(
-        "Q?", "https://example.com/m", ["Brazil", "Jamaica", "Draw"], ""
+        "Q?", "https://example.com/m", "Brazil, Jamaica, Draw", ""
     )
     contract.predict(market_id, "Brazil")
     with direct_vm.expect_revert("already predicted"):
@@ -68,7 +70,7 @@ def test_predict_resolve_and_score(direct_vm, direct_deploy, direct_alice, direc
     market_id = contract.create_market(
         "Who wins Brazil vs Jamaica?",
         "https://example.com/match",
-        ["Brazil", "Jamaica", "Draw"],
+        "Brazil, Jamaica, Draw",
         "",
     )
 
@@ -104,7 +106,7 @@ def test_unresolved_event_does_not_finalize(direct_vm, direct_deploy, direct_ali
     contract = direct_deploy(CONTRACT)
     direct_vm.sender = direct_alice
     market_id = contract.create_market(
-        "Q?", "https://example.com/m", ["Brazil", "Jamaica", "Draw"], ""
+        "Q?", "https://example.com/m", "Brazil, Jamaica, Draw", ""
     )
 
     direct_vm.mock_web(r".*example\.com/m.*", {"status": 200, "body": "Kick off 18:00"})

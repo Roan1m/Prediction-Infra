@@ -13,7 +13,7 @@ No oracles. No centralized backend. The judgment happens on-chain.
 ## How it works
 
 ```
-create_market(question, resolution_url, outcomes[], deadline)  ->  market_id
+create_market(question, resolution_url, outcomes, deadline)  ->  market_id   # outcomes = "A, B, C"
 predict(market_id, outcome)        # one prediction per player per market
 resolve(market_id)                 # fetch web + LLM + validator consensus -> winner + scoring
 ```
@@ -48,7 +48,7 @@ requirements.txt
 4. Use the **Write Methods** panel:
    - `create_market` — e.g. question `"Who wins Brazil vs Jamaica on 2025-06-05?"`,
      `resolution_url` a real results page (e.g. a BBC Sport scores page),
-     `outcomes` `["Brazil", "Jamaica", "Draw"]`.
+     `outcomes` the comma-separated string `"Brazil, Jamaica, Draw"`.
    - `predict` — pick a market id and an outcome (switch the active account to simulate
      different players).
    - `resolve` — once the event is over; validators fetch the page and decide.

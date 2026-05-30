@@ -4,7 +4,7 @@
 #
 # A general-purpose, AI-resolved prediction market:
 #   - Anyone can create a market: a question, a public resolution URL, and a
-#     list of possible outcomes.
+#     comma-separated list of possible outcomes.
 #   - Players predict an outcome (one prediction per player per market).
 #   - Anyone can `resolve` a market once the event has happened. Resolution is
 #     done by GenLayer validators: they fetch the resolution URL from the live
@@ -13,8 +13,12 @@
 #     the *decision* field, not on the free-form analysis text).
 #   - Correct predictors earn 1 point.
 #
-# This contract is points-based (no native token transfers), so it runs fully
-# in the GenLayer Studio. See README for a "betting" extension idea.
+# Notes on types (important for schema loading):
+#   - Public method signatures use plain `int` / `str`, matching the documented
+#     GenLayer patterns. Sized integers (`u256`) are used only for STORAGE
+#     fields, never in public method parameter/return annotations.
+#   - `outcomes` is passed as a comma-separated string (e.g. "A, B, C") so the
+#     Studio UI only ever needs simple text inputs.
 
 from genlayer import *
 
@@ -45,7 +49,7 @@ class Market:
 
 
 class PredictionMarket(gl.Contract):
-    # ---- persistent storage (declared as typed class fields) ----
+    # ---- persistent storage (sized ints / storage collections here) ----
     market_count: u256
     markets: TreeMap[u256, Market]
     market_outcomes: TreeMap[u256, DynArray[str]]
@@ -63,12 +67,16 @@ class PredictionMarket(gl.Contract):
         self,
         question: str,
         resolution_url: str,
-        outcomes: list[str],
+        outcomes: str,
         deadline: str,
-    ) -> u256:
-        """Create a new prediction market and return its id."""
-        if len(outcomes) < 2:
-            raise gl.vm.UserError("a market needs at least two outcomes")
+    ) -> int:
+        """Create a new prediction market and return its id.
+
+        `outcomes` is a comma-separated string, e.g. "Brazil, Jamaica, Draw".
+        """
+        parsed = [o.strip() for o in outcomes.split(",") if o.strip() != ""]
+        if len(parsed) < 2:
+            raise gl.vm.UserError("a market needs at least two outcomes (comma-separated)")
 
         market_id = self.market_count
 
@@ -84,7 +92,7 @@ class PredictionMarket(gl.Contract):
 
         # initialise the per-market collections
         self.market_outcomes[market_id] = DynArray[str]()
-        for outcome in outcomes:
+        for outcome in parsed:
             self.market_outcomes[market_id].append(outcome)
 
         self.predictions[market_id] = DynArray[Prediction]()
@@ -93,7 +101,7 @@ class PredictionMarket(gl.Contract):
         return market_id
 
     @gl.public.write
-    def predict(self, market_id: u256, outcome: str) -> None:
+    def predict(self, market_id: int, outcome: str) -> None:
         """Register the caller's prediction for a market."""
         if market_id not in self.markets:
             raise gl.vm.UserError("market not found")
@@ -127,7 +135,7 @@ class PredictionMarket(gl.Contract):
         )
 
     @gl.public.write
-    def resolve(self, market_id: u256) -> typing.Any:
+    def resolve(self, market_id: int) -> typing.Any:
         """
         Resolve a market using live web data + an LLM, with validator consensus.
 
@@ -218,11 +226,11 @@ Respond ONLY with JSON in this exact shape, nothing else:
     # Read (view) methods
     # ------------------------------------------------------------------
     @gl.public.view
-    def get_market_count(self) -> u256:
+    def get_market_count(self) -> int:
         return self.market_count
 
     @gl.public.view
-    def get_market(self, market_id: u256) -> typing.Any:
+    def get_market(self, market_id: int) -> typing.Any:
         if market_id not in self.markets:
             raise gl.vm.UserError("market not found")
         m = self.markets[market_id]
@@ -239,7 +247,7 @@ Respond ONLY with JSON in this exact shape, nothing else:
         }
 
     @gl.public.view
-    def get_predictions(self, market_id: u256) -> typing.Any:
+    def get_predictions(self, market_id: int) -> typing.Any:
         if market_id not in self.predictions:
             return []
         return [
@@ -253,5 +261,5 @@ Respond ONLY with JSON in this exact shape, nothing else:
         ]
 
     @gl.public.view
-    def get_points(self, player: str) -> u256:
+    def get_points(self, player: str) -> int:
         return self.points.get(Address(player), u256(0))
