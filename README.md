@@ -89,8 +89,10 @@ genlayer deploy --contract contracts/prediction_market.py
 ## Notes
 
 - **GenVM version pin** — the first line of the contract pins the runtime
-  (`# { "Depends": "py-genlayer:1jb45aa8..." }`). If your environment expects a different
-  runner (e.g. `py-genlayer:test`), update that comment to match.
+  (`# { "Depends": "py-genlayer:test" }`). This is the runner used by GenLayer
+  Studio. If a deploy target rejects it with *"Could not load contract schema"*,
+  it expects a different runner — switch that comment to the pinned version hash
+  your network provides (e.g. `py-genlayer:1jb45aa8...`).
 - **Web evidence must be public and stable.** Validators each fetch the page
   independently, so use a results page whose verdict is unambiguous. The contract only
   finalizes when the LLM returns a concrete outcome; otherwise it stays open
