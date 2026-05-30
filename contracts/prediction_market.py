@@ -2,23 +2,27 @@
 #
 # PredictionMarket - an Intelligent Contract for GenLayer.
 #
-# A general-purpose, AI-resolved prediction market:
-#   - Anyone can create a market: a question, a public resolution URL, and a
-#     comma-separated list of possible outcomes.
+# AI-resolved prediction market:
+#   - Anyone creates a market: question, public resolution URL, comma-separated
+#     outcomes (e.g. "Brazil, Jamaica, Draw").
 #   - Players predict an outcome (one prediction per player per market).
-#   - Anyone can `resolve` a market once the event has happened. Resolution is
-#     done by GenLayer validators: they fetch the resolution URL from the live
-#     web and ask an LLM which outcome the evidence supports. Consensus is
-#     reached with the Equivalence Principle (validators only have to agree on
-#     the *decision* field, not on the free-form analysis text).
+#   - Anyone resolves a market once the event happened: GenLayer validators
+#     fetch the URL from the live web, ask an LLM which outcome the evidence
+#     supports, and agree via the Equivalence Principle (only the decision
+#     field has to match, the analysis text may differ).
 #   - Correct predictors earn 1 point.
 #
-# Notes on types (important for schema loading):
-#   - Public method signatures use plain `int` / `str`, matching the documented
-#     GenLayer patterns. Sized integers (`u256`) are used only for STORAGE
-#     fields, never in public method parameter/return annotations.
-#   - `outcomes` is passed as a comma-separated string (e.g. "A, B, C") so the
-#     Studio UI only ever needs simple text inputs.
+# Storage design uses ONLY documented GenLayer patterns to guarantee the schema
+# loads:
+#   - flat `DynArray[Market]` and flat `DynArray[Prediction]` (DynArray of an
+#     @allow_storage dataclass with primitive/str/Address/bool/u256 fields),
+#   - `TreeMap[Address, u256]` for points.
+# No nested collections and no u256-keyed maps (those have no documented
+# precedent). A market id is simply its index in `markets`. Per-market data is
+# kept flat: outcomes live in the Market as a comma-separated string, and each
+# Prediction stores the market_id it belongs to.
+#
+# Public method signatures use plain `int` / `str` (sized ints are storage-only).
 
 from genlayer import *
 
@@ -30,6 +34,7 @@ from dataclasses import dataclass
 @allow_storage
 @dataclass
 class Prediction:
+    market_id: u256
     player: Address
     outcome: str
     scored: bool
@@ -43,21 +48,25 @@ class Market:
     question: str
     resolution_url: str
     deadline: str  # informational ISO-8601 string (not enforced on-chain)
+    outcomes_csv: str  # normalized comma-separated outcomes, e.g. "Brazil,Jamaica,Draw"
     resolved: bool
     winning_outcome: str
     analysis: str
 
 
 class PredictionMarket(gl.Contract):
-    # ---- persistent storage (sized ints / storage collections here) ----
-    market_count: u256
-    markets: TreeMap[u256, Market]
-    market_outcomes: TreeMap[u256, DynArray[str]]
-    predictions: TreeMap[u256, DynArray[Prediction]]
+    markets: DynArray[Market]
+    predictions: DynArray[Prediction]
     points: TreeMap[Address, u256]
 
     def __init__(self) -> None:
-        self.market_count = u256(0)
+        pass
+
+    # ------------------------------------------------------------------
+    # helpers (plain python, run in deterministic context)
+    # ------------------------------------------------------------------
+    def _split(self, csv: str) -> list:
+        return [o.strip() for o in csv.split(",") if o.strip() != ""]
 
     # ------------------------------------------------------------------
     # Write methods
@@ -70,63 +79,49 @@ class PredictionMarket(gl.Contract):
         outcomes: str,
         deadline: str,
     ) -> int:
-        """Create a new prediction market and return its id.
+        """Create a market and return its id (its index in `markets`).
 
         `outcomes` is a comma-separated string, e.g. "Brazil, Jamaica, Draw".
         """
-        parsed = [o.strip() for o in outcomes.split(",") if o.strip() != ""]
+        parsed = self._split(outcomes)
         if len(parsed) < 2:
             raise gl.vm.UserError("a market needs at least two outcomes (comma-separated)")
 
-        market_id = self.market_count
-
-        self.markets[market_id] = Market(
-            creator=gl.message.sender_address,
-            question=question,
-            resolution_url=resolution_url,
-            deadline=deadline,
-            resolved=False,
-            winning_outcome="",
-            analysis="",
+        self.markets.append(
+            Market(
+                creator=gl.message.sender_address,
+                question=question,
+                resolution_url=resolution_url,
+                deadline=deadline,
+                outcomes_csv=",".join(parsed),
+                resolved=False,
+                winning_outcome="",
+                analysis="",
+            )
         )
-
-        # initialise the per-market collections
-        self.market_outcomes[market_id] = DynArray[str]()
-        for outcome in parsed:
-            self.market_outcomes[market_id].append(outcome)
-
-        self.predictions[market_id] = DynArray[Prediction]()
-
-        self.market_count = market_id + u256(1)
-        return market_id
+        return len(self.markets) - 1
 
     @gl.public.write
     def predict(self, market_id: int, outcome: str) -> None:
         """Register the caller's prediction for a market."""
-        if market_id not in self.markets:
+        if market_id < 0 or market_id >= len(self.markets):
             raise gl.vm.UserError("market not found")
 
         market = self.markets[market_id]
         if market.resolved:
             raise gl.vm.UserError("market already resolved")
 
-        # the chosen outcome must be one of the market's outcomes
-        valid = False
-        for o in self.market_outcomes[market_id]:
-            if o == outcome:
-                valid = True
-                break
-        if not valid:
+        if outcome not in self._split(market.outcomes_csv):
             raise gl.vm.UserError("invalid outcome for this market")
 
-        # one prediction per player per market
         sender = gl.message.sender_address
-        for pred in self.predictions[market_id]:
-            if pred.player == sender:
+        for p in self.predictions:
+            if p.market_id == market_id and p.player == sender:
                 raise gl.vm.UserError("you already predicted on this market")
 
-        self.predictions[market_id].append(
+        self.predictions.append(
             Prediction(
+                market_id=u256(market_id),
                 player=sender,
                 outcome=outcome,
                 scored=False,
@@ -139,28 +134,26 @@ class PredictionMarket(gl.Contract):
         """
         Resolve a market using live web data + an LLM, with validator consensus.
 
-        The leader fetches the resolution URL and asks an LLM which outcome the
-        evidence supports. Validators independently do the same and only need to
-        agree on the `outcome` field (the analysis text is allowed to differ).
+        The leader fetches the URL and asks an LLM which outcome the evidence
+        supports. Validators independently do the same and only need to agree on
+        the `outcome` field (the analysis text is allowed to differ).
         """
-        if market_id not in self.markets:
+        if market_id < 0 or market_id >= len(self.markets):
             raise gl.vm.UserError("market not found")
 
         market = self.markets[market_id]
         if market.resolved:
             raise gl.vm.UserError("market already resolved")
 
-        # copy everything we need into plain memory BEFORE the nondet block:
+        # Copy what we need into plain memory BEFORE the nondet block:
         # storage is not accessible inside non-deterministic blocks.
         url = market.resolution_url
         question = market.question
-        outcomes = [o for o in self.market_outcomes[market_id]]
+        outcomes = self._split(market.outcomes_csv)
 
         def leader_fn() -> typing.Any:
             response = gl.nondet.web.get(url)
-            page = response.body.decode("utf-8")
-            # keep the prompt bounded
-            page = page[:8000]
+            page = response.body.decode("utf-8")[:8000]  # keep the prompt bounded
 
             prompt = f"""You are resolving a prediction market based ONLY on the evidence below.
 
@@ -189,36 +182,33 @@ Respond ONLY with JSON in this exact shape, nothing else:
             return result
 
         def validator_fn(leader_result: gl.vm.Result) -> bool:
-            # reject if the leader errored
             if not isinstance(leader_result, gl.vm.Return):
                 return False
             mine = leader_fn()
             leader_outcome = str(leader_result.calldata.get("outcome", "")).strip()
             my_outcome = str(mine.get("outcome", "")).strip()
-            # consensus only on the decision, not on the analysis text
-            return leader_outcome == my_outcome
+            return leader_outcome == my_outcome  # consensus only on the decision
 
         result = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
 
         outcome = str(result.get("outcome", "UNRESOLVED")).strip()
         analysis = str(result.get("analysis", ""))
 
-        # do not finalise if the event is not decidable yet
         if outcome == "UNRESOLVED" or outcome not in outcomes:
             raise gl.vm.UserError("market is not resolvable yet (outcome: " + outcome + ")")
 
-        # finalise the market (market is a live storage view -> writes persist)
+        # finalise the market (storage view -> writes persist)
         market.resolved = True
         market.winning_outcome = outcome
         market.analysis = analysis
 
-        # score every prediction and award points to the winners
-        for pred in self.predictions[market_id]:
-            if not pred.scored:
-                pred.scored = True
-                if pred.outcome == outcome:
-                    pred.correct = True
-                    self.points[pred.player] = self.points.get(pred.player, u256(0)) + u256(1)
+        # score predictions for this market and award points to the winners
+        for p in self.predictions:
+            if p.market_id == market_id and not p.scored:
+                p.scored = True
+                if p.outcome == outcome:
+                    p.correct = True
+                    self.points[p.player] = self.points.get(p.player, u256(0)) + u256(1)
 
         return result
 
@@ -227,11 +217,11 @@ Respond ONLY with JSON in this exact shape, nothing else:
     # ------------------------------------------------------------------
     @gl.public.view
     def get_market_count(self) -> int:
-        return self.market_count
+        return len(self.markets)
 
     @gl.public.view
     def get_market(self, market_id: int) -> typing.Any:
-        if market_id not in self.markets:
+        if market_id < 0 or market_id >= len(self.markets):
             raise gl.vm.UserError("market not found")
         m = self.markets[market_id]
         return {
@@ -243,13 +233,11 @@ Respond ONLY with JSON in this exact shape, nothing else:
             "resolved": m.resolved,
             "winning_outcome": m.winning_outcome,
             "analysis": m.analysis,
-            "outcomes": [o for o in self.market_outcomes[market_id]],
+            "outcomes": self._split(m.outcomes_csv),
         }
 
     @gl.public.view
     def get_predictions(self, market_id: int) -> typing.Any:
-        if market_id not in self.predictions:
-            return []
         return [
             {
                 "player": p.player.as_hex,
@@ -257,7 +245,8 @@ Respond ONLY with JSON in this exact shape, nothing else:
                 "scored": p.scored,
                 "correct": p.correct,
             }
-            for p in self.predictions[market_id]
+            for p in self.predictions
+            if p.market_id == market_id
         ]
 
     @gl.public.view
