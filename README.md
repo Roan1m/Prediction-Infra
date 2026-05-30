@@ -88,11 +88,16 @@ genlayer deploy --contract contracts/prediction_market.py
 
 ## Notes
 
-- **GenVM version pin** — the first line of the contract pins the runtime
-  (`# { "Depends": "py-genlayer:test" }`). This is the runner used by GenLayer
-  Studio. If a deploy target rejects it with *"Could not load contract schema"*,
-  it expects a different runner — switch that comment to the pinned version hash
-  your network provides (e.g. `py-genlayer:1jb45aa8...`).
+- **GenVM runner version (pinned hash, required)** — the first line pins the GenVM
+  runner by exact hash:
+  `# { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }`.
+  Studionet, Asimov and Bradbury all **require a pinned hash** — floating tags like
+  `py-genlayer:test` / `py-genlayer:latest` are rejected at deploy with
+  `invalid_contract` (every validator must resolve to the exact same runner binary or
+  consensus breaks). For multi-file contracts use `py-genlayer-multi:<hash>`. Get the
+  current hash from the
+  [first-contract guide](https://docs.genlayer.com/developers/intelligent-contracts/first-contract)
+  or the [runners reference](https://sdk.genlayer.com/main/python-sdk/runners/index.html).
 - **Web evidence must be public and stable.** Validators each fetch the page
   independently, so use a results page whose verdict is unambiguous. The contract only
   finalizes when the LLM returns a concrete outcome; otherwise it stays open
